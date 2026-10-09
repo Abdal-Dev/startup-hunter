@@ -1,0 +1,61 @@
+# ---------------------------------------------------------------
+# Startup Hunter settings. Change these freely, no code changes needed.
+# ---------------------------------------------------------------
+
+# A company only counts if its info mentions one of these places.
+location_keywords: ["Dresden", "Sachsen", "Saxony", "Freital", "Radebeul", "Pirna"]
+
+# Web searches the bot runs every time. Results are read by the AI,
+# which pulls out the startup names it finds on each page.
+search_queries:
+  - "Startup Dresden Software gegründet"
+  - "Dresden Start-up Gründer Software Team"
+  - "TU Dresden Ausgründung Startup Software"
+  - "Dresden startup hiring developer"
+  - "Startups in Dresden Liste"
+  - "Dresden KI Startup"
+max_search_results_per_query: 8
+
+# Pages you already know list Dresden startups (optional).
+# Add any URL here and the bot will read it every run.
+seed_pages: []
+
+# Also check a free German job board API for software jobs in Dresden.
+use_job_board: true
+job_board_pages: 5
+
+# Safety limits so one run stays quick and cheap.
+max_pages_to_read_per_run: 30
+max_new_companies_per_run: 25
+
+# Only companies scoring at least this (0-10) get an email draft.
+min_fit_score: 6
+
+# Be polite to websites: wait this many seconds between requests.
+request_delay_seconds: 1.5
+
+# Which AI to use: anthropic (Claude), openai (GPT) or google (Gemini).
+# Put the matching API key in .env (see .env.example).
+provider: anthropic
+
+# Models per provider: a fast cheap one for reading/scoring, a better one
+# for writing. Only the section for the provider above is used.
+models:
+  anthropic:
+    fast: claude-haiku-5-5
+    writer: claude-sonnet-5-5
+  openai:
+    fast: gpt-5-mini
+    writer: gpt-5
+  google:
+    fast: gemini-2.5-flash
+    writer: gemini-2.5-pro
+
+# Language of the email drafts.
+email_language: English
+
+output:
+  google_sheet_name: Startup Hunter
+  google_credentials_file: google-credentials.json
+  csv_path: data/startups.csv
+  database_path: data/startups.db
