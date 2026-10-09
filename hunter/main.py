@@ -87,6 +87,8 @@ def main(argv=None):
 
     if mode == "agent":
         print("4/4 Handing over to your coding assistant")
+        if not args.no_sheet:
+            sync_sheet(store, out, path)  # catch up on anything reviewed earlier
         todo = write_todo(review_dir, pipeline, cfg)
         print(f"  {os.path.join(review_dir, 'todo.json')}: "
               f"{len(todo['companies'])} companies to review, "
@@ -133,22 +135,25 @@ def save(store, new, out, path, no_sheet):
     new.sort(key=lambda c: c.fit_score, reverse=True)
     write_csv(path(out["csv_path"]), new)
     print(f"  CSV: {path(out['csv_path'])}")
-
-    # The sheet gets every company not yet sent to it, so if the sheet is set
-    # up later (or a run fails), nothing found earlier is lost.
     if not no_sheet:
-        pending = store.not_exported()
-        try:
-            url = write_google_sheet(path(out["google_credentials_file"]),
-                                     out["google_sheet_name"], pending)
-            if url:
-                store.mark_exported([c.domain for c in pending])
-                print(f"  Google Sheet: {len(pending)} rows added, {url}")
-            else:
-                print("  Google Sheet: not set up yet (see README step 5), CSV only")
-        except Exception as error:
-            print(f"  ! Google Sheet failed: {error}\n"
-                  "    These rows will be added on the next successful run.")
+        sync_sheet(store, out, path)
+
+
+def sync_sheet(store, out, path):
+    """Send every company not yet in the sheet, so if the sheet is set up later
+    (or a run fails), nothing found earlier is lost."""
+    pending = store.not_exported()
+    try:
+        url = write_google_sheet(path(out["google_credentials_file"]),
+                                 out["google_sheet_name"], pending)
+        if url:
+            store.mark_exported([c.domain for c in pending])
+            print(f"  Google Sheet: {len(pending)} rows added, {url}")
+        else:
+            print("  Google Sheet: not set up yet (see README step 5), CSV only")
+    except Exception as error:
+        print(f"  ! Google Sheet failed: {error}\n"
+              "    These rows will be added on the next successful run.")
 
 
 if __name__ == "__main__":
