@@ -9,6 +9,7 @@ from dataclasses import asdict, fields
 
 from .models import Company
 
+REVIEW_STATUS = "to review"   # agent mode: waiting for your coding assistant
 LIST_FIELDS = {"emails_on_site", "tech_stack", "founders"}
 
 
@@ -44,6 +45,8 @@ class Store:
         self.db.execute(
             "INSERT OR REPLACE INTO rejected VALUES (?, ?)", (domain, reason)
         )
+        # A company waiting for review can turn out to be a reject.
+        self.db.execute("DELETE FROM companies WHERE domain = ?", (domain,))
         self.db.commit()
 
     def add(self, company: Company):
@@ -58,11 +61,11 @@ class Store:
         )
         self.db.commit()
 
-    def not_exported(self) -> list[Company]:
+    def _select(self, where: str, params=()) -> list[Company]:
         names = [f.name for f in fields(Company)]
         rows = self.db.execute(
-            f"SELECT {', '.join(names)} FROM companies WHERE exported = 0 "
-            "ORDER BY CAST(fit_score AS INTEGER) DESC"
+            f"SELECT {', '.join(names)} FROM companies WHERE {where} "
+            "ORDER BY CAST(fit_score AS INTEGER) DESC", params
         ).fetchall()
         companies = []
         for row in rows:
@@ -72,6 +75,19 @@ class Store:
             data["fit_score"] = int(data["fit_score"] or 0)
             companies.append(Company(**data))
         return companies
+
+    def get(self, domain: str) -> Company | None:
+        found = self._select("domain = ?", (domain,))
+        return found[0] if found else None
+
+    def not_exported(self) -> list[Company]:
+        """Companies not yet in the sheet, except those still waiting for review."""
+        return self._select("exported = 0 AND status != ?", (REVIEW_STATUS,))
+
+    def domains(self) -> list[str]:
+        """Every domain ever seen, kept or rejected."""
+        return [row[0] for row in self.db.execute(
+            "SELECT domain FROM companies UNION SELECT domain FROM rejected ORDER BY 1")]
 
     def mark_exported(self, domains: list[str]):
         self.db.executemany(
