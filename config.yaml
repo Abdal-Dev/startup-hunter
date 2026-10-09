@@ -34,7 +34,15 @@ min_fit_score: 6
 # Be polite to websites: wait this many seconds between requests.
 request_delay_seconds: 1.5
 
-# Which AI to use: anthropic (Claude), openai (GPT) or google (Gemini).
+# Who does the AI work (reading articles, scoring companies, writing drafts):
+#   auto  - api if an API key is in .env, otherwise agent (recommended)
+#   api   - the bot calls the provider below itself. Costs a few cents per run.
+#   agent - no API key needed. The bot collects and reads websites for free, then
+#           your coding assistant (Claude Code, Codex, Cursor...) does the scoring
+#           and drafts on your existing subscription. See AGENTS.md.
+ai_mode: auto
+
+# For api mode: anthropic (Claude), openai (GPT) or google (Gemini).
 # Put the matching API key in .env (see .env.example).
 provider: anthropic
 
