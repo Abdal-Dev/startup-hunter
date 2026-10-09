@@ -41,7 +41,7 @@ You need 3.10 or newer. If it's older (or missing), install it with
 ### 2. Install the project
 
 ```bash
-cd ~/Documents/startup-hunter
+cd ~/project-directory
 python3 -m venv .venv            # a private Python just for this project
 source .venv/bin/activate        # turn it on (your prompt shows "(.venv)")
 pip install -r requirements.txt  # install the libraries
