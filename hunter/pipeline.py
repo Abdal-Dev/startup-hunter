@@ -6,6 +6,7 @@ import datetime as dt
 
 from .llm import describe
 from .models import Company, Lead
+from .store import REVIEW_STATUS
 from .web import extract_emails, find_links, html_to_text, is_blocked, normalize_domain
 
 JOB_BOARD_URL = "https://www.arbeitnow.com/api/job-board-api?page={page}"
@@ -22,7 +23,8 @@ def best_email(emails: list[str]) -> str:
 
 
 class Pipeline:
-    def __init__(self, config, store, http, search, llm=None, profile="", log=print):
+    def __init__(self, config, store, http, search, llm=None, profile="", log=print,
+                 agent_mode=False):
         self.cfg = config
         self.store = store
         self.http = http          # fetches pages (hunter.web.Http)
@@ -31,6 +33,12 @@ class Pipeline:
         self.profile = profile
         self.log = log
         self.region = ", ".join(config["location_keywords"][:3])
+        self.keywords = [k.lower() for k in config["location_keywords"]]
+        # Agent mode: no API key. Companies are collected and read for free, then
+        # left for a coding assistant to score (see hunter/agent.py).
+        self.agent_mode = agent_mode
+        self.to_review = []        # (company, website text) pairs
+        self.pages_for_agent = []  # article URLs the assistant can mine for startups
 
     # ------------------------------------------------------------ step 1: leads
     def leads_from_job_board(self) -> list[Lead]:
@@ -58,14 +66,19 @@ class Pipeline:
         for query in self.cfg["search_queries"]:
             for result in self.search(query, self.cfg["max_search_results_per_query"]):
                 url = result.get("href", "")
-                if url and url not in urls and not normalize_domain(url).endswith(
+                if url.startswith("http") and url not in urls and not normalize_domain(url).endswith(
                         ("linkedin.com", "xing.com", "facebook.com", "instagram.com")):
                     urls.append(url)
         return urls[: self.cfg["max_pages_to_read_per_run"]]
 
     def leads_from_pages(self) -> list[Lead]:
+        if self.agent_mode:
+            self.pages_for_agent = self.pages_to_read()
+            self.log(f"  web pages: {len(self.pages_for_agent)} found, "
+                     "left for your coding assistant to read")
+            return []
         if not self.llm:
-            self.log("  web pages: skipped (needs an AI API key to read them)")
+            self.log("  web pages: skipped (needs an AI API key or agent mode to read them)")
             return []
         leads = []
         pages = self.pages_to_read()
@@ -111,6 +124,27 @@ class Pipeline:
                 emails += [e for e in extract_emails(sub) if e not in emails]
         return "\n\n".join(texts), emails
 
+    def examine(self, lead: Lead) -> tuple[Company, str] | None:
+        """Find and read a lead's website. None if it's known, unreachable or out of region."""
+        website = self.find_website(lead)
+        domain = normalize_domain(website)
+        if not domain or is_blocked(domain) or self.store.seen(domain):
+            return None
+        text, emails = self.read_site(website)
+        if not text:
+            self.store.reject(domain, "website unreachable")
+            return None
+        if not any(k in (text + lead.hint).lower() for k in self.keywords):
+            self.store.reject(domain, "no sign of the region on the site")
+            return None
+        company = Company(
+            name=lead.name, domain=domain, website=website, source=lead.source,
+            source_url=lead.source_url, hint=lead.hint,
+            found_on=dt.date.today().isoformat(), emails_on_site=emails,
+            contact_email=best_email(emails),
+        )
+        return company, text
+
     # ------------------------------------------------------------- the run
     def run(self) -> list[Company]:
         self.log("1/4 Collecting leads")
@@ -121,7 +155,6 @@ class Pipeline:
 
         self.log("2/4 Checking companies")
         new, seen_names = [], set()
-        keywords = [k.lower() for k in self.cfg["location_keywords"]]
         for lead in leads:
             if len(new) >= self.cfg["max_new_companies_per_run"]:
                 self.log("  reached max_new_companies_per_run, stopping")
@@ -131,30 +164,21 @@ class Pipeline:
                 continue
             seen_names.add(key)
 
-            website = self.find_website(lead)
-            domain = normalize_domain(website)
-            if not domain or is_blocked(domain) or self.store.seen(domain):
+            found = self.examine(lead)
+            if not found:
                 continue
-
-            text, emails = self.read_site(website)
-            if not text:
-                self.store.reject(domain, "website unreachable")
-                continue
-            if not any(k in (text + lead.hint).lower() for k in keywords):
-                self.store.reject(domain, "no sign of the region on the site")
-                continue
-
-            company = Company(
-                name=lead.name, domain=domain, website=website, source=lead.source,
-                source_url=lead.source_url, hint=lead.hint,
-                found_on=dt.date.today().isoformat(), emails_on_site=emails,
-                contact_email=best_email(emails),
-            )
-            if self.llm and not self.score(company, text):
+            company, text = found
+            if self.agent_mode:
+                company.status = REVIEW_STATUS
+                self.to_review.append((company, text))
+            elif self.llm and not self.score(company, text):
                 continue
             self.store.add(company)
             new.append(company)
-            self.log(f"  + {company.name} ({domain}) fit {company.fit_score}/10")
+            if self.agent_mode:
+                self.log(f"  + {company.name} ({company.domain}) waiting for review")
+            else:
+                self.log(f"  + {company.name} ({company.domain}) fit {company.fit_score}/10")
 
         self.log("3/4 Drafting emails")
         drafted = 0
@@ -170,7 +194,10 @@ class Pipeline:
                         drafted += 1
                     except Exception as error:
                         self.log(f"  ! draft failed for {company.name}: {error}")
-        self.log(f"  {drafted} drafts written")
+        if self.agent_mode:
+            self.log("  left for your coding assistant (see AGENTS.md)")
+        else:
+            self.log(f"  {drafted} drafts written")
         return new
 
     def score(self, company: Company, text: str) -> bool:
@@ -181,6 +208,13 @@ class Pipeline:
         except Exception as error:
             self.log(f"  ! could not score {company.name}: {error}")
             return False
+        return self.apply_assessment(company, a)
+
+    def apply_assessment(self, company: Company, a: dict) -> bool:
+        """Copy a fit assessment (from the API or a coding assistant) onto the company.
+
+        Returns False, and remembers the rejection, if it isn't a fit at all.
+        """
         if not (a["is_young_startup"] and a["in_region"] and a["builds_software"]):
             self.store.reject(company.domain, a.get("fit_reason", "not a fit"))
             return False
@@ -189,7 +223,10 @@ class Pipeline:
         company.team_size = a["team_size"]
         company.tech_stack = a["tech_stack"]
         company.founders = a["founders"]
-        company.contact_email = a["contact_email"] or company.contact_email
-        company.fit_score = int(a["fit_score"])
+        # Never accept an email that wasn't actually found on the site.
+        email = (a.get("contact_email") or "").strip().lower()
+        if email in company.emails_on_site:
+            company.contact_email = email
+        company.fit_score = max(0, min(10, int(a["fit_score"])))
         company.fit_reason = a["fit_reason"]
         return True
