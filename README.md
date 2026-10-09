@@ -115,13 +115,13 @@ The next run fills the sheet, including everything found before you set it up.
 ## Everyday use
 
 ```bash
-cd ~/Documents/startup-hunter && source .venv/bin/activate && python hunt.py
+cd ~/project-directory/startup-hunter && source .venv/bin/activate && python hunt.py
 ```
 
 Tip: make it one word. Run this once:
 
 ```bash
-echo 'alias hunt="cd ~/Documents/startup-hunter && source .venv/bin/activate && python hunt.py"' >> ~/.zshrc
+echo 'alias hunt="cd ~/project-directory/startup-hunter && source .venv/bin/activate && python hunt.py"' >> ~/.zshrc
 ```
 
 Open a new Terminal window and from then on just type `hunt`.
