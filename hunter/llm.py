@@ -95,6 +95,38 @@ EMAIL_TOOL = {
 }
 
 
+# The instructions for each task. Also handed to coding assistants in agent
+# mode (see hunter/agent.py), so both modes follow exactly the same rules.
+def extract_rules(region: str) -> str:
+    return (
+        "You read web pages and list the startups they mention. Only include "
+        f"young companies based in or near {region}. Skip investors, universities, "
+        "public bodies, service agencies, large corporations and news publishers. "
+        "If the page is itself a startup's website, include that startup. "
+        "Never invent websites."
+    )
+
+
+def qualify_rules(region: str) -> str:
+    return (
+        "You help a job seeker judge whether a company is a good place to ask for a "
+        f"part-time engineering role. Target region: {region}. Base every answer on "
+        "the website text only; use 'unknown' or empty values instead of guessing."
+    )
+
+
+def email_rules(language: str) -> str:
+    return (
+        f"You write short, genuine cold emails in {language} from a job seeker to a "
+        "startup founder. Rules: under 150 words; open with something specific about "
+        "what the startup builds; say clearly what the sender offers and asks for "
+        "(a working-student/part-time role, starting with a small paid project); use "
+        "only facts from the sender's profile; never name the sender's past clients; "
+        "no flattery, buzzwords or exclamation marks; plain text; end with the "
+        "sender's name and LinkedIn link."
+    )
+
+
 # Provider name in config.yaml -> the .env variable holding its API key.
 PROVIDERS = {
     "anthropic": "ANTHROPIC_API_KEY",
@@ -175,13 +207,7 @@ class LLM:
     def extract_startups(self, page_text: str, page_url: str, region: str) -> list[dict]:
         result = self._call_tool(
             self.fast_model,
-            system=(
-                "You read web pages and list the startups they mention. Only include "
-                f"young companies based in or near {region}. Skip investors, universities, "
-                "public bodies, service agencies, large corporations and news publishers. "
-                "If the page is itself a startup's website, include that startup. "
-                "Never invent websites."
-            ),
+            system=extract_rules(region),
             prompt=f"Page: {page_url}\n\n{page_text}",
             tool=EXTRACT_TOOL,
         )
@@ -189,13 +215,9 @@ class LLM:
 
     def qualify(self, name: str, website: str, pages_text: str, emails: list[str],
                 region: str, profile: str) -> dict:
-        result = self._call_tool(
+        return self._call_tool(
             self.fast_model,
-            system=(
-                "You help a job seeker judge whether a company is a good place to ask for a "
-                f"part-time engineering role. Target region: {region}. Base every answer on "
-                "the website text only; use 'unknown' or empty values instead of guessing."
-            ),
+            system=qualify_rules(region),
             prompt=(
                 f"Candidate profile:\n{profile}\n\n"
                 f"Company: {name}\nWebsite: {website}\n"
@@ -204,23 +226,11 @@ class LLM:
             ),
             tool=QUALIFY_TOOL,
         )
-        # Never accept an email the model didn't actually see on the site.
-        if result.get("contact_email", "").lower() not in emails:
-            result["contact_email"] = ""
-        return result
 
     def draft_email(self, company_summary: str, profile: str, language: str) -> dict:
         return self._call_tool(
             self.writer_model,
-            system=(
-                f"You write short, genuine cold emails in {language} from a job seeker to a "
-                "startup founder. Rules: under 150 words; open with something specific about "
-                "what the startup builds; say clearly what the sender offers and asks for "
-                "(a working-student/part-time role, starting with a small paid project); use "
-                "only facts from the sender's profile; never name the sender's past clients; "
-                "no flattery, buzzwords or exclamation marks; plain text; end with the "
-                "sender's name and LinkedIn link."
-            ),
+            system=email_rules(language),
             prompt=f"Sender profile:\n{profile}\n\nStartup:\n{company_summary}",
             tool=EMAIL_TOOL,
         )
