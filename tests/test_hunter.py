@@ -1,11 +1,12 @@
 """Offline tests: no internet or API key needed.  Run:  python -m unittest -v"""
 
 import csv
+import json
 import os
 import tempfile
 import unittest
 
-from hunter.llm import LLM
+from hunter.agent import import_results, write_todo
 from hunter.models import Company
 from hunter.output import HEADERS, write_csv, write_google_sheet
 from hunter.pipeline import Pipeline, best_email
@@ -176,13 +177,82 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(len(pipeline.run()), 1)
 
 
-class LLMGuardTests(unittest.TestCase):
-    def test_qualify_drops_invented_email(self):
-        llm = object.__new__(LLM)  # skip __init__, no API client needed
-        llm.fast_model = "x"
-        llm._call_tool = lambda *a, **k: {"contact_email": "ceo@invented.de"}
-        result = llm.qualify("A", "https://a.de", "text", ["hi@a.de"], "Dresden", "me")
-        self.assertEqual(result["contact_email"], "")
+def assessment(**changes):
+    a = {"is_young_startup": True, "in_region": True, "builds_software": True,
+         "what_they_build": "x", "stage": "seed", "team_size": "2-5", "tech_stack": [],
+         "founders": [], "contact_email": "", "fit_score": 8, "fit_reason": "test"}
+    return dict(a, **changes)
+
+
+class AssessmentGuardTests(unittest.TestCase):
+    def test_drops_invented_email(self):
+        pipeline = Pipeline(CONFIG, Store(":memory:"), FakeHttp(), fake_search)
+        c = Company(name="A", domain="a.de", website="https://a.de",
+                    emails_on_site=["hi@a.de"], contact_email="hi@a.de")
+        self.assertTrue(pipeline.apply_assessment(c, assessment(contact_email="ceo@a.de")))
+        self.assertEqual(c.contact_email, "hi@a.de")  # kept the one actually on the site
+
+
+class AgentModeTests(unittest.TestCase):
+    """No API key: the pipeline collects, a coding assistant reviews, we import."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.pipeline = Pipeline(CONFIG, Store(":memory:"), FakeHttp(), fake_search,
+                                 log=lambda *a: None, agent_mode=True)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def collect(self):
+        self.pipeline.run()
+        return write_todo(self.tmp.name, self.pipeline, CONFIG)
+
+    def review(self, companies):
+        with open(os.path.join(self.tmp.name, "results.json"), "w") as f:
+            json.dump({"companies": companies}, f)
+        return import_results(self.tmp.name, self.pipeline, CONFIG, log=lambda *a: None)
+
+    def test_collect_holds_companies_for_review(self):
+        todo = self.collect()
+        self.assertEqual([c["domain"] for c in todo["companies"]], ["quantdresden.de"])
+        self.assertIn("trading software", todo["companies"][0]["website_text"])
+        self.assertEqual(todo["pages_to_read"], ["https://news.example/dresden-startups"])
+        self.assertIn("quantdresden.de", todo["instructions"]["already_known_domains"])
+        self.assertEqual(self.pipeline.store.not_exported(), [])  # not in the sheet yet
+
+    def test_import_saves_checked_results(self):
+        self.collect()
+        saved = self.review([
+            # From todo.json, with an invented email that must be dropped.
+            dict(assessment(contact_email="ceo@invented.de"), website="https://quantdresden.de",
+                 name="Quant Dresden UG", email_subject="Hi", email_body="Draft"),
+            # Found by the assistant on a page: the site is checked like any lead.
+            dict(assessment(contact_email="hello@robocrop.io", fit_score=7),
+                 website="https://robocrop.io", name="Robocrop", note="news page",
+                 email_subject="Hello", email_body="Draft 2"),
+            # Not in the region, so the import rejects it.
+            dict(assessment(), website="https://munichtech.de", name="Munichtech"),
+            {"website": "https://broken.de", "name": "Broken"},  # missing fields
+        ])
+        by_name = {c.name: c for c in saved}
+        self.assertEqual(sorted(by_name), ["Quant Dresden UG", "Robocrop"])
+        self.assertEqual(by_name["Quant Dresden UG"].contact_email, "jobs@quantdresden.de")
+        self.assertEqual(by_name["Robocrop"].email_body, "Draft 2")
+        self.assertEqual(by_name["Robocrop"].source, "coding assistant")
+        self.assertEqual(len(self.pipeline.store.not_exported()), 2)
+        self.assertTrue(self.pipeline.store.seen("munichtech.de"))
+        self.assertFalse(os.path.exists(os.path.join(self.tmp.name, "results.json")))
+        with open(os.path.join(self.tmp.name, "todo.json")) as f:
+            self.assertEqual(json.load(f)["companies"], [])
+
+    def test_import_rejects_and_keeps_unreviewed(self):
+        self.collect()
+        saved = self.review([dict(assessment(is_young_startup=False),
+                                  website="https://quantdresden.de", name="Quant")])
+        self.assertEqual(saved, [])
+        self.assertIsNone(self.pipeline.store.get("quantdresden.de"))  # removed
+        self.assertTrue(self.pipeline.store.seen("quantdresden.de"))   # and remembered
 
 
 class OutputTests(unittest.TestCase):
