@@ -2,25 +2,32 @@
 # Startup Hunter settings. Change these freely, no code changes needed.
 # ---------------------------------------------------------------
 
-# A company only counts if its info mentions one of these places.
-location_keywords: ["Dresden", "Sachsen", "Saxony", "Freital", "Radebeul", "Pirna"]
+# ---------------------------------------------------------------
+# Where to look
+# ---------------------------------------------------------------
+# Supported countries: Austria, Belgium, Czechia, Denmark, Estonia, Finland,
+# France, Germany, Ireland, Italy, Netherlands, Poland, Portugal, Spain, Sweden,
+# Switzerland, United Kingdom. (Short forms like "de" or "uk" work too.)
+country: Germany
+city: Dresden
 
-# Web searches the bot runs every time. Results are read by the AI,
-# which pulls out the startup names it finds on each page.
-search_queries:
-  - "Startup Dresden Software gegründet"
-  - "Dresden Start-up Gründer Software Team"
-  - "TU Dresden Ausgründung Startup Software"
-  - "Dresden startup hiring developer"
-  - "Startups in Dresden Liste"
-  - "Dresden KI Startup"
+# Optional: the state/region and nearby towns that also count as "in the area".
+# A company only counts if its website mentions the city or one of these.
+# Add the local spelling too if it differs (e.g. "München" for Munich).
+nearby: ["Sachsen", "Saxony", "Freital", "Radebeul", "Pirna"]
+
+# The bot searches in English and in the country's language automatically.
+# Add your own phrases here; {city} is filled in.
+# Example:  extra_search_queries: ["{city} fintech startup", "{city} SaaS startup"]
+extra_search_queries: []
 max_search_results_per_query: 8
 
-# Pages you already know list Dresden startups (optional).
+# Pages you already know list startups in your city (optional).
 # Add any URL here and the bot will read it every run.
 seed_pages: []
 
-# Also check a free German job board API for software jobs in Dresden.
+# Also check a free job board API for software jobs in your city.
+# It only covers Germany, so it's switched off automatically elsewhere.
 use_job_board: true
 job_board_pages: 5
 
@@ -31,7 +38,8 @@ max_new_companies_per_run: 25
 # Only companies scoring at least this (0-10) get an email draft.
 min_fit_score: 6
 
-# Be polite to websites: wait this many seconds between requests.
+# Be polite to websites: wait at least this many seconds between requests.
+# Sites that ask for more (Crawl-delay in robots.txt) get more.
 request_delay_seconds: 1.5
 
 # Who does the AI work (reading articles, scoring companies, writing drafts):
