@@ -1,6 +1,6 @@
 # Startup Hunter
 
-Finds young startups in and around Dresden, reads their websites, scores how well
+Finds young startups in and around your city, reads their websites, scores how well
 they fit you, and drafts a personal email for the best ones. Everything lands in
 a Google Sheet (and a CSV file). **It never sends emails.** You review and send
 them yourself.
@@ -16,12 +16,40 @@ The AI part (reading articles, scoring, writing drafts) can be done in two ways:
 With `ai_mode: auto` (the default) it uses API mode when a key is in `.env`,
 and agent mode otherwise. You can switch any time.
 
+## Countries covered
+
+You pick one country and a city in `config.yaml` (setup step 4). The bot searches
+in English plus the country's own language:
+
+- Austria (German)
+- Belgium (Dutch and French)
+- Czechia (Czech)
+- Denmark (Danish)
+- Estonia (Estonian)
+- Finland (Finnish)
+- France (French)
+- Germany (German), the only country where the job board is also used
+- Ireland (English)
+- Italy (Italian)
+- Netherlands (Dutch)
+- Poland (Polish)
+- Portugal (Portuguese)
+- Spain (Spanish)
+- Sweden (Swedish)
+- Switzerland (German and French)
+- United Kingdom (English)
+
+Any city in these countries works. Adding a country takes one entry in
+`hunter/countries.py`.
+
 ## What one run does
 
-1. **Collects leads** from a free German job board (software jobs in Dresden) and
-   from web searches (articles and lists about Dresden startups).
-2. **Finds each company's website** and reads its homepage plus its Impressum and
-   contact pages, where German companies must publish a contact email.
+1. **Collects leads** from web searches in English and your country's language
+   (articles and lists about startups in your city), plus a free job board in
+   Germany.
+2. **Finds each company's website** and reads its homepage plus its legal notice
+   (Impressum, mentions légales...) and contact pages, where companies publish a
+   contact email.
 3. **Skips** anything outside the region, already seen, or not a startup. Rejected
    sites are remembered, so they never cost money again.
 4. **Scores fit (0–10)** with the AI and **drafts an email** for every company that
@@ -91,7 +119,29 @@ provider. You only need a key for that one.
 
 Treat the key like a password. `.gitignore` already keeps `.env` out of Git.
 
-### 4. Your profile (what the emails say about you)
+### 4. Your city and country
+
+Open `config.yaml` and set where to look:
+
+```yaml
+country: France
+city: Lyon
+nearby: ["Villeurbanne", "Auvergne-Rhône-Alpes"]   # optional
+```
+
+The country must be one of the [countries covered](#countries-covered); the
+English name or a short form like `fr`, `de` or `uk` works. The bot searches in English and in the country's language, and
+only keeps companies whose website mentions your city or a `nearby` place. Add
+local spellings to `nearby` if they differ (e.g. `München` for Munich). The job
+board only covers Germany and is skipped elsewhere.
+
+To try another city once, without editing the file:
+
+```bash
+python hunt.py --agent --city Utrecht --country nl
+```
+
+### 5. Your profile (what the emails say about you)
 
 The drafts are written only from facts in `profile.md`, which you create from
 the template:
@@ -108,7 +158,7 @@ written in either mode.
 `profile.md` is listed in `.gitignore`, so your personal details stay on your
 machine and are never committed. Only the blank template is shared.
 
-### 5. Google Sheet (optional, the CSV works without it)
+### 6. Google Sheet (optional, the CSV works without it)
 
 1. Open [console.cloud.google.com](https://console.cloud.google.com) and create a
    project, e.g. "startup-hunter".
@@ -167,24 +217,25 @@ Open a new Terminal window and from then on just type `hunt`.
 3. Edit the draft so it sounds like you, and send it from your own Gmail.
 4. Change **Status** to `contacted`, then `replied`, `interview` and so on.
 
-Running it once or twice a week is plenty. Dresden is small, so the first runs find
-most companies and later runs pick up the new ones.
+Running it once or twice a week is plenty. The first runs find most companies in
+your city, and later runs pick up the new ones.
 
 | Option | What it does |
 |---|---|
 | `python hunt.py --agent` | Agent mode, even if an API key is set |
 | `python hunt.py --import-review` | Agent mode: save the results your assistant wrote |
+| `python hunt.py --city Lyon --country France` | Search another city this time |
 | `python hunt.py --no-ai` | Job board only, no AI at all |
 | `python hunt.py --no-sheet` | Write only the CSV file |
 
 ## Customizing (no code needed)
 
-- **`config.yaml`**: search phrases, towns, how many companies per run, the minimum
+- **`config.yaml`**: country, city and nearby towns, extra search phrases, how many companies per run, the minimum
   fit score for a draft, the email language, `ai_mode` (auto, api or agent),
   and which AI provider and models to use in API mode.
-  `seed_pages` lets you add any page that lists Dresden startups.
+  `seed_pages` lets you add any page that lists startups in your city.
 - **`profile.md`**: the facts the emails are built from (create it from
-  `profile.example.md`, see setup step 4). Keep it current. The drafts only use
+  `profile.example.md`, see setup step 5). Keep it current. The drafts only use
   what's written there, and they never name your past clients. It's private:
   `.gitignore` keeps it out of Git.
 
@@ -196,7 +247,8 @@ most companies and later runs pick up the new ones.
 | `profile.example.md` | Template for your private `profile.md` |
 | `hunter/main.py` | Reads settings, connects the pieces, prints progress |
 | `hunter/pipeline.py` | The 4 steps: leads → websites → reading and scoring → drafts |
-| `hunter/web.py` | Fetching pages politely (robots.txt, delays), emails, links |
+| `hunter/countries.py` | Supported countries, their search region and local-language search phrases |
+| `hunter/web.py` | Fetching pages politely (see Ground rules), emails, links |
 | `hunter/llm.py` | The three AI calls (Claude, GPT or Gemini), each with a fixed JSON output shape, and the rules they follow |
 | `hunter/agent.py` | Agent mode: writes `todo.json` for your assistant and checks its `results.json` |
 | `AGENTS.md` | Step-by-step instructions for coding assistants (agent mode) |
@@ -206,8 +258,22 @@ most companies and later runs pick up the new ones.
 
 ## Ground rules built in
 
-- Reads only public websites, respects `robots.txt`, and waits between requests.
-- No LinkedIn scraping, and no automatic sending.
+The bot is built to behave like a polite visitor, so sites have no reason to block it:
+
+- **Never touches** LinkedIn, X/Twitter, Facebook, Instagram, Xing, TikTok,
+  Glassdoor, Indeed, Crunchbase and similar sites, in any country. Their terms
+  forbid bots, so not a single request goes to them. Check founders there
+  yourself, by hand.
+- **Obeys `robots.txt`**, including `Crawl-delay`. If a site's `robots.txt` can't
+  be read because of a server error, the site is skipped (as the robots.txt
+  standard, RFC 9309, says).
+- **Goes slowly**: at least `request_delay_seconds` between requests and 3 seconds
+  between searches. It reads at most 4 pages per company website.
+- **Backs off**: if a site answers "too many requests" (429) or "unavailable"
+  (503), it's skipped for the rest of the run. If the search engine rate-limits,
+  searching stops for that run instead of retrying.
+- **Says who it is**: its User-Agent names the bot and links to this project.
+- Reads only public pages: no logins, no paywalls, no automatic sending.
 - Only uses email addresses published on the company's own website, and skips
   privacy/legal and no-reply addresses.
 
@@ -216,11 +282,16 @@ most companies and later runs pick up the new ones.
 - **`command not found: python`**: run `source .venv/bin/activate` first.
 - **`0 jobs in the region` / few results**: search engines sometimes rate-limit.
   Wait a few minutes and run again, or add `seed_pages` in `config.yaml`.
+- **`Country ... isn't supported`**: use one of the
+  [countries covered](#countries-covered) (English name, or a short form like
+  `de`, `fr`, `uk`).
+- **Companies rejected as "no sign of the region"**: their site doesn't mention
+  your city. Add local spellings or nearby towns to `nearby` in `config.yaml`.
 - **Google Sheet error `SpreadsheetNotFound`**: the sheet name must match
   `google_sheet_name` exactly, and the sheet must be shared with the service
   account email.
 - **Agent mode: `No results file`**: your assistant hasn't written
   `data/review/results.json` yet. Ask it to "review the startups" first.
 - **`No profile.md found`**: run `cp profile.example.md profile.md` and fill it
-  in (setup step 4).
+  in (setup step 5).
 - **Start fresh**: delete the `data` folder.
