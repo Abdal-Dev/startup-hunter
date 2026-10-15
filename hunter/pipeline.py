@@ -7,11 +7,22 @@ import datetime as dt
 from .llm import describe
 from .models import Company, Lead
 from .store import REVIEW_STATUS
-from .web import extract_emails, find_links, html_to_text, is_blocked, normalize_domain
+from .web import (SEARCH_ENGINE_DOMAINS, extract_emails, find_links, html_to_text, is_blocked, never_fetch,
+                  normalize_domain)
 
 JOB_BOARD_URL = "https://www.arbeitnow.com/api/job-board-api?page={page}"
-EXTRA_PAGE_WORDS = ["impressum", "imprint", "kontakt", "contact", "about", "team", "über uns"]
-LEGAL_EMAIL_WORDS = ("datenschutz", "privacy", "dsgvo", "gdpr", "legal", "noreply", "no-reply")
+# Pages worth reading besides the homepage, most useful first: legal notices and
+# contact pages (where companies publish an email), then about/team pages.
+# Covers the languages of the supported countries (see hunter/countries.py).
+EXTRA_PAGE_WORDS = [
+    "impressum", "imprint", "legal notice", "mentions légales", "mentions-legales",
+    "aviso legal", "aviso-legal", "note legali", "colofon",
+    "kontakt", "contact", "contacto", "contatti", "contato", "yhteystiedot", "kontakty",
+    "about", "über uns", "à propos", "a-propos", "sobre nosotros", "chi siamo",
+    "over ons", "om oss", "om os", "o nas", "meistä", "team", "équipe", "equipo",
+]
+LEGAL_EMAIL_WORDS = ("datenschutz", "privacy", "privacidad", "privacite", "dsgvo", "gdpr",
+                     "rgpd", "avg", "legal", "noreply", "no-reply", "donotreply")
 
 
 def best_email(emails: list[str]) -> str:
@@ -32,7 +43,7 @@ class Pipeline:
         self.llm = llm            # hunter.llm.LLM, or None to skip the AI steps
         self.profile = profile
         self.log = log
-        self.region = ", ".join(config["location_keywords"][:3])
+        self.region = config.get("region") or ", ".join(config["location_keywords"][:3])
         self.keywords = [k.lower() for k in config["location_keywords"]]
         # Agent mode: no API key. Companies are collected and read for free, then
         # left for a coding assistant to score (see hunter/agent.py).
@@ -66,8 +77,9 @@ class Pipeline:
         for query in self.cfg["search_queries"]:
             for result in self.search(query, self.cfg["max_search_results_per_query"]):
                 url = result.get("href", "")
-                if url.startswith("http") and url not in urls and not normalize_domain(url).endswith(
-                        ("linkedin.com", "xing.com", "facebook.com", "instagram.com")):
+                domain = normalize_domain(url)
+                if (url.startswith("http") and url not in urls and not never_fetch(domain)
+                        and domain not in SEARCH_ENGINE_DOMAINS):
                     urls.append(url)
         return urls[: self.cfg["max_pages_to_read_per_run"]]
 
