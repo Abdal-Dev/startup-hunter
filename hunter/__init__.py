@@ -1,1 +1,1 @@
-"""Startup Hunter: finds young Dresden startups and drafts outreach emails."""
+"""Startup Hunter: finds young startups in your city and drafts outreach emails."""
