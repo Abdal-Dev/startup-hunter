@@ -61,6 +61,15 @@ least `min_fit_score_for_email` and there is a `contact_email`. Follow
 - Don't edit `profile.md`, `.env` or anything in `data/` except
   `data/review/results.json`.
 
+**Browsing rules** (the same ones the bot follows, see "Ground rules" in the README)
+- Never open LinkedIn, X/Twitter, Facebook, Instagram, Xing, TikTok, Glassdoor,
+  Indeed or Crunchbase pages, even if a search result points there.
+- Respect `robots.txt`, and stop visiting a site that answers 429 or 503.
+- Go slowly: at most about 4 pages per company website, one request at a time.
+- Only public pages: no logins, forms or paywalls.
+- The search area is in `instructions.region`. A company only counts if it's based
+  there; the import also checks that its website mentions the city or a nearby place.
+
 ## 4. Save
 
 Write `data/review/results.json`, matching `results_file_schema`, then run:
