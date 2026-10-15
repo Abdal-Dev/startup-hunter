@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import functools
 import os
 import sys
 
 import yaml
 
 from .agent import import_results, write_todo
+from .countries import COUNTRIES, apply_location
 from .llm import LLM, PROVIDERS
 from .output import write_csv, write_google_sheet
 from .pipeline import Pipeline
@@ -27,7 +29,10 @@ def load_env():
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Find young Dresden startups and draft emails.")
+    parser = argparse.ArgumentParser(
+        description="Find young startups in your city and draft emails.")
+    parser.add_argument("--city", help="search this city instead of the one in config.yaml")
+    parser.add_argument("--country", help=f"country of the city: {', '.join(COUNTRIES)}")
     parser.add_argument("--no-ai", action="store_true",
                         help="skip the AI (only job-board leads, no scoring or drafts)")
     parser.add_argument("--no-sheet", action="store_true",
@@ -42,6 +47,20 @@ def main(argv=None):
     load_env()
     with open(args.config, encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
+    if args.city and args.city.strip().lower() != str(cfg.get("city", "")).lower():
+        cfg["city"] = args.city
+        cfg["nearby"] = []  # the nearby towns in config.yaml belong to the other city
+    if args.country:
+        cfg["country"] = args.country
+    try:
+        notes = apply_location(cfg)
+    except ValueError as error:
+        print(error)
+        return 1
+    print(f"Looking for startups in {cfg.get('region') or cfg['location_keywords'][0]}")
+    for note in notes:
+        print(f"  {note}")
+    search = functools.partial(web_search, region=cfg["search_region"])
     out = cfg["output"]
     path = lambda p: p if os.path.isabs(p) else os.path.join(HERE, p)
     review_dir = os.path.join(os.path.dirname(path(out["database_path"])), "review")
@@ -49,7 +68,7 @@ def main(argv=None):
     http = Http(cfg["request_delay_seconds"])
 
     if args.import_review:
-        pipeline = Pipeline(cfg, store, http, web_search)
+        pipeline = Pipeline(cfg, store, http, search)
         print("Importing your coding assistant's review")
         saved = import_results(review_dir, pipeline, cfg)
         save(store, saved, out, path, args.no_sheet)
@@ -64,7 +83,7 @@ def main(argv=None):
     if mode == "api" and not os.path.exists(profile_path):
         print("No profile.md found. Create yours from the template first:\n"
               "  cp profile.example.md profile.md\n"
-              "then fill in your own details (see README step 4).")
+              "then fill in your own details (see README step 5).")
         return 1
     if mode == "agent" and not os.path.exists(profile_path):
         print("Note: no profile.md yet. Your coding assistant needs it for the email\n"
@@ -81,7 +100,7 @@ def main(argv=None):
         llm = LLM(provider, os.environ[PROVIDERS[provider]].strip(),
                   models["fast"], models["writer"])
 
-    pipeline = Pipeline(cfg, store, http, web_search, llm=llm, profile=profile,
+    pipeline = Pipeline(cfg, store, http, search, llm=llm, profile=profile,
                         agent_mode=mode == "agent")
     new = pipeline.run()
 
@@ -150,7 +169,7 @@ def sync_sheet(store, out, path):
             store.mark_exported([c.domain for c in pending])
             print(f"  Google Sheet: {len(pending)} rows added, {url}")
         else:
-            print("  Google Sheet: not set up yet (see README step 5), CSV only")
+            print("  Google Sheet: not set up yet (see README step 6), CSV only")
     except Exception as error:
         print(f"  ! Google Sheet failed: {error}\n"
               "    These rows will be added on the next successful run.")
