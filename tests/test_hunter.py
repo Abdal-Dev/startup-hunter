@@ -7,11 +7,13 @@ import tempfile
 import unittest
 
 from hunter.agent import import_results, write_todo
+from hunter.countries import apply_location, find_country
 from hunter.models import Company
 from hunter.output import HEADERS, write_csv, write_google_sheet
 from hunter.pipeline import Pipeline, best_email
 from hunter.store import Store
-from hunter.web import extract_emails, find_links, html_to_text, is_blocked, normalize_domain
+from hunter.web import (Http, extract_emails, find_links, html_to_text, is_blocked,
+                        never_fetch, normalize_domain)
 
 CONFIG = {
     "location_keywords": ["Dresden", "Sachsen"],
@@ -182,6 +184,97 @@ def assessment(**changes):
          "what_they_build": "x", "stage": "seed", "team_size": "2-5", "tech_stack": [],
          "founders": [], "contact_email": "", "fit_score": 8, "fit_reason": "test"}
     return dict(a, **changes)
+
+
+class LocationTests(unittest.TestCase):
+    def test_city_and_country_become_search_settings(self):
+        cfg = {"country": "nl", "city": "Utrecht", "nearby": ["Zeist"],
+               "extra_search_queries": ["{city} fintech"], "use_job_board": True}
+        notes = apply_location(cfg)
+        self.assertEqual(cfg["country"], "Netherlands")
+        self.assertEqual(cfg["location_keywords"], ["Utrecht", "Zeist"])  # not the country
+        self.assertEqual(cfg["region"], "Utrecht, Netherlands")
+        self.assertEqual(cfg["search_region"], "nl-nl")
+        self.assertIn("startups in Utrecht lijst", cfg["search_queries"])  # local language
+        self.assertIn("Utrecht startups list", cfg["search_queries"])      # English
+        self.assertIn("Utrecht fintech", cfg["search_queries"])            # user's own
+        self.assertFalse(cfg["use_job_board"])  # the job board only covers Germany
+        self.assertEqual(len(notes), 1)
+
+    def test_germany_keeps_job_board(self):
+        cfg = {"country": "Deutschland", "city": "Leipzig", "use_job_board": True}
+        self.assertEqual(apply_location(cfg), [])
+        self.assertTrue(cfg["use_job_board"])
+
+    def test_unknown_country_and_old_configs(self):
+        self.assertIsNone(find_country("Narnia"))
+        with self.assertRaises(ValueError):
+            apply_location({"country": "Narnia", "city": "X"})
+        old = dict(CONFIG)
+        apply_location(old)  # no city: old-style settings are left alone
+        self.assertEqual(old["location_keywords"], CONFIG["location_keywords"])
+
+
+class FakeResponse:
+    def __init__(self, status=200, text="", content_type="text/html"):
+        self.status_code, self.text = status, text
+        self.ok = 200 <= status < 300
+        self.headers = {"Content-Type": content_type}
+
+
+class FakeSession:
+    """Stands in for requests.Session: answers from a dict, records every URL."""
+
+    def __init__(self, responses):
+        self.responses, self.requested, self.headers = responses, [], {}
+
+    def get(self, url, timeout):
+        self.requested.append(url)
+        return self.responses.get(url, FakeResponse(404))
+
+
+class PoliteHttpTests(unittest.TestCase):
+    def make(self, responses):
+        http = Http(delay_seconds=0, log=lambda *a: None)
+        http.session = FakeSession(responses)
+        return http
+
+    def test_never_fetches_social_networks(self):
+        for domain in ["linkedin.com", "de.linkedin.com", "x.com", "indeed.fr", "glassdoor.co.uk"]:
+            self.assertTrue(never_fetch(domain), domain)
+        self.assertFalse(never_fetch("robocrop.io"))
+        http = self.make({})
+        self.assertIsNone(http.get("https://www.linkedin.com/company/robocrop"))
+        self.assertEqual(http.session.requested, [])  # not even robots.txt
+
+    def test_obeys_robots_txt(self):
+        http = self.make({
+            "https://a.de/robots.txt": FakeResponse(text="User-agent: *\nDisallow: /private"),
+            "https://a.de/": FakeResponse(text="<p>home</p>"),
+        })
+        self.assertEqual(http.get("https://a.de/"), "<p>home</p>")
+        self.assertIsNone(http.get("https://a.de/private/team"))
+        self.assertNotIn("https://a.de/private/team", http.session.requested)
+
+    def test_missing_robots_allows_but_server_error_blocks(self):
+        http = self.make({"https://a.de/": FakeResponse(text="ok"),  # robots.txt is 404
+                          "https://b.de/robots.txt": FakeResponse(500)})
+        self.assertEqual(http.get("https://a.de/"), "ok")
+        self.assertIsNone(http.get("https://b.de/"))
+        self.assertNotIn("https://b.de/", http.session.requested)
+
+    def test_uses_crawl_delay(self):
+        http = self.make({"https://a.de/robots.txt":
+                          FakeResponse(text="User-agent: *\nCrawl-delay: 4")})
+        http.allowed("https://a.de/")
+        self.assertEqual(http._site_delay["https://a.de"], 4.0)
+
+    def test_backs_off_after_too_many_requests(self):
+        http = self.make({"https://a.de/robots.txt": FakeResponse(text=""),
+                          "https://a.de/1": FakeResponse(429)})
+        self.assertIsNone(http.get("https://a.de/1"))
+        self.assertIsNone(http.get("https://a.de/2"))
+        self.assertNotIn("https://a.de/2", http.session.requested)
 
 
 class AssessmentGuardTests(unittest.TestCase):
