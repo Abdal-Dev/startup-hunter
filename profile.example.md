@@ -15,6 +15,9 @@ Keep it short, specific and true. Edit it whenever your situation changes.
   part-time, full-time, internship) and how many hours per week
 - Experience: years of experience and your main skills and tools
   (languages, frameworks, databases, cloud)
+- Also willing to work with (optional): skills that aren't your strongest
+  but that you'd use if needed. Say they should rank below your main skills
+  and only be mentioned in emails when a company needs them.
 - Most recently: what you did in your latest role, with concrete results.
   If clients are confidential, write "(do not name the clients)".
 - Earlier: one or two older roles or projects worth mentioning, ideally
