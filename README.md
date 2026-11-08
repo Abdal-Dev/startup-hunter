@@ -155,6 +155,16 @@ Replace every placeholder with your own details (name, contact, what you're
 looking for, experience, results) and save. Without it, no email drafts can be
 written in either mode.
 
+The profile is also what companies are scored against, so list your skills in
+two tiers:
+
+- **Experience**: your main skills. Companies that need these score highest.
+- **Also willing to work with** (optional): skills that aren't your strongest
+  but that you'd use if needed, e.g. "C++ and Python, as long as the work is
+  related to my field". Companies that mainly need these still count, but rank
+  below the ones that match your main skills. Emails mention these skills only
+  when a company needs them.
+
 `profile.md` is listed in `.gitignore`, so your personal details stay on your
 machine and are never committed. Only the blank template is shared.
 
