@@ -38,9 +38,11 @@ max_new_companies_per_run: 25
 # Only companies scoring at least this (0-10) get an email draft.
 min_fit_score: 6
 
-# Be polite to websites: wait at least this many seconds between requests.
-# Sites that ask for more (Crawl-delay in robots.txt) get more.
-request_delay_seconds: 1.5
+# Be polite to websites. The bot waits at least request_delay_seconds between
+# any two requests, and site_delay_seconds between two pages of the same
+# website (sites that ask for more in robots.txt get more).
+request_delay_seconds: 3
+site_delay_seconds: 5
 
 # Who does the AI work (reading articles, scoring companies, writing drafts):
 #   auto  - api if an API key is in .env, otherwise agent (recommended)
