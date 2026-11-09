@@ -65,7 +65,8 @@ least `min_fit_score_for_email` and there is a `contact_email`. Follow
 - Never open LinkedIn, X/Twitter, Facebook, Instagram, Xing, TikTok, Glassdoor,
   Indeed or Crunchbase pages, even if a search result points there.
 - Respect `robots.txt`, and stop visiting a site that answers 429 or 503.
-- Go slowly: at most about 4 pages per company website, one request at a time.
+- Go slowly: one request at a time, a few seconds between pages (at least 5
+  seconds between pages of the same site), and at most about 4 pages per company website.
 - Only public pages: no logins, forms or paywalls.
 - The search area is in `instructions.region`. A company only counts if it's based
   there; the import also checks that its website mentions the city or a nearby place.
