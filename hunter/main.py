@@ -65,7 +65,7 @@ def main(argv=None):
     path = lambda p: p if os.path.isabs(p) else os.path.join(HERE, p)
     review_dir = os.path.join(os.path.dirname(path(out["database_path"])), "review")
     store = Store(path(out["database_path"]))
-    http = Http(cfg["request_delay_seconds"])
+    http = Http(cfg["request_delay_seconds"], cfg.get("site_delay_seconds", 5))
 
     if args.import_review:
         pipeline = Pipeline(cfg, store, http, search)
