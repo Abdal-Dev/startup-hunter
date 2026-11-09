@@ -4,12 +4,14 @@ import csv
 import json
 import os
 import tempfile
+import time
 import unittest
+import unittest.mock
 
 from hunter.agent import import_results, write_todo
 from hunter.countries import apply_location, find_country
 from hunter.models import Company
-from hunter.output import HEADERS, write_csv, write_google_sheet
+from hunter.output import HEADERS, SHEET_HEADERS, sheet_rows, write_csv, write_google_sheet
 from hunter.pipeline import Pipeline, best_email
 from hunter.store import Store
 from hunter.web import (Http, extract_emails, find_links, html_to_text, is_blocked,
@@ -235,7 +237,7 @@ class FakeSession:
 
 class PoliteHttpTests(unittest.TestCase):
     def make(self, responses):
-        http = Http(delay_seconds=0, log=lambda *a: None)
+        http = Http(delay_seconds=0, site_delay_seconds=0, log=lambda *a: None)
         http.session = FakeSession(responses)
         return http
 
@@ -268,6 +270,17 @@ class PoliteHttpTests(unittest.TestCase):
                           FakeResponse(text="User-agent: *\nCrawl-delay: 4")})
         http.allowed("https://a.de/")
         self.assertEqual(http._site_delay["https://a.de"], 4.0)
+
+    def test_waits_longer_between_pages_of_the_same_site(self):
+        http = self.make({})
+        http.delay, http.site_delay = 0, 5
+        http._site_last["https://a.de"] = time.time()
+        slept = []
+        with unittest.mock.patch("hunter.web.time.sleep", slept.append):
+            http._wait("https://b.de")   # another site: no pause
+            http._wait("https://a.de")   # same site again: about 5 seconds
+        self.assertEqual(len(slept), 1)
+        self.assertGreater(slept[0], 4)
 
     def test_backs_off_after_too_many_requests(self):
         http = self.make({"https://a.de/robots.txt": FakeResponse(text=""),
@@ -364,6 +377,35 @@ class OutputTests(unittest.TestCase):
 
     def test_sheet_skipped_without_credentials(self):
         self.assertIsNone(write_google_sheet("/nonexistent.json", "x", []))
+
+    def test_sheet_rows_follow_the_sheets_own_columns(self):
+        # The user moved "Company" first and added their own columns in between
+        # and at the end.
+        header = (["Company", "My notes"] + [h for h in SHEET_HEADERS if h != "Company"]
+                  + ["Interview date"])
+        c = Company(name="A", domain="a.de", website="https://a.de", fit_score=7)
+        rows, missing = sheet_rows(header, [c])
+        self.assertEqual(missing, [])
+        row = rows[0]
+        self.assertEqual(row[0], "A")
+        self.assertEqual(row[1], "")  # the user's own column stays empty
+        self.assertEqual(row[header.index("Website")], "https://a.de")
+        self.assertEqual(row[header.index("Email sent")], "Not sent")
+        self.assertEqual(row[header.index("LinkedIn message")], "Not sent")
+        self.assertEqual(len(row), len(header) - 1)  # never reaches "Interview date"
+
+    def test_new_sheet_gets_tracking_columns(self):
+        self.assertEqual(SHEET_HEADERS[-2:], ["Email sent", "LinkedIn message"])
+        rows, missing = sheet_rows(SHEET_HEADERS, [Company(name="A", domain="a.de", website="w")])
+        self.assertEqual(rows[0][-2:], ["Not sent", "Not sent"])
+        self.assertEqual(missing, [])
+
+    def test_sheet_rows_skip_missing_columns(self):
+        header = ["Company", "Website"]
+        rows, missing = sheet_rows(header, [Company(name="A", domain="a.de", website="w")])
+        self.assertEqual(rows, [["A", "w"]])
+        self.assertIn("Email draft", missing)
+        self.assertNotIn("Email sent", missing)  # tracking columns are optional
 
 
 if __name__ == "__main__":
