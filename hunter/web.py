@@ -5,7 +5,8 @@ The rules every request follows (see "Ground rules" in the README):
   (LinkedIn, X, Facebook, Instagram, Xing, Glassdoor, Indeed...).
 - Obey robots.txt, including Crawl-delay. If robots.txt can't be read because the
   site has a server error, don't crawl that site (as RFC 9309 says).
-- Wait between requests, and stop visiting a site for the rest of the run if
+- Wait between requests (a few seconds between any two requests, longer between
+  pages of the same site), and stop visiting a site for the rest of the run if
   it answers "too many requests" (429) or "unavailable" (503).
 - Say honestly who we are in the User-Agent.
 """
@@ -132,8 +133,10 @@ class Http:
     BACK_OFF_CODES = (429, 503)   # "too many requests", "unavailable"
     MAX_CRAWL_DELAY = 30          # seconds; slower sites are skipped instead
 
-    def __init__(self, delay_seconds: float = 1.5, timeout: int = 15, log=print):
-        self.delay = delay_seconds
+    def __init__(self, delay_seconds: float = 3, site_delay_seconds: float = 5,
+                 timeout: int = 15, log=print):
+        self.delay = delay_seconds            # between any two requests
+        self.site_delay = site_delay_seconds  # between two pages of the same site
         self.timeout = timeout
         self.log = log
         self.session = requests.Session()
@@ -145,10 +148,11 @@ class Http:
         self._last_request = 0.0
 
     def _wait(self, root: str):
-        """Pause so we never go faster than our delay, or the site's Crawl-delay."""
+        """Pause so we never go faster than our delays, or the site's Crawl-delay."""
         now = time.time()
+        site_delay = max(self.site_delay, self._site_delay.get(root, 0))
         pause = max(self.delay - (now - self._last_request),
-                    self._site_delay.get(root, 0) - (now - self._site_last.get(root, 0)))
+                    site_delay - (now - self._site_last.get(root, 0)))
         if pause > 0:
             time.sleep(pause)
         self._last_request = self._site_last[root] = time.time()
