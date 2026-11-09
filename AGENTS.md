@@ -5,8 +5,47 @@ cold emails. In **agent mode** you (the coding assistant) do the AI part, so the
 needs no API key. The Python code does everything else: searching, reading websites,
 checking your output and saving it.
 
-Use this workflow when the user asks you to "review the startups", "run the hunt",
-"find startups" or similar. Run every command from the project folder.
+This file has two parts:
+
+- **Working on the code**: rules for any change to the project (code, docs,
+  commits). They always apply.
+- **Running the hunt** (steps 1–5): use this workflow when the user asks you to
+  "review the startups", "run the hunt", "find startups" or similar. Run every
+  command from the project folder.
+
+# Working on the code
+
+**Commits**
+- Never add yourself (or any AI tool) as an author or co-author: no
+  `Co-Authored-By: Claude`, `Generated with ...` or similar lines in commit
+  messages or pull requests. Commits show only the user.
+- Commit only when the user asks. Make one commit per changed file, with a short
+  subject saying what changed in that file and a body saying why.
+- Run `.venv/bin/python -m unittest` before committing, and don't commit if a
+  test fails.
+- Push only when the user asks. Never force-push or rewrite history without the
+  user's explicit go-ahead.
+
+**Privacy: never commit or upload**
+- `profile.md`, `.env`, `google-credentials.json` or anything in `data/`. They
+  are in `.gitignore`; keep it that way.
+- The user's name, email, LinkedIn URL or API keys in any committed file.
+  Before committing, check the diff for them.
+
+**Code and docs**
+- Match the existing style: small functions, plain names, short comments that
+  explain why.
+- Add or update tests in `tests/` for every behaviour change. Tests must run
+  offline (use the fakes in `tests/test_hunter.py`).
+- Update `README.md` (and this file, if the workflow changes) in the same change
+  as the code. Docs are written for non-programmers: plain words, short steps.
+- Don't weaken the scraping rules in `hunter/web.py` (never-fetch list,
+  robots.txt, delays, backing off), and don't add automation for LinkedIn, X or
+  other sites on that list, or anything that logs into accounts.
+- Never write to existing rows or user columns of the Google Sheet. The bot only
+  adds new rows (see `hunter/output.py`).
+
+# Running the hunt
 
 ## 1. Check the setup
 
