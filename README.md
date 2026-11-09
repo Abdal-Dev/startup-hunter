@@ -184,6 +184,23 @@ machine and are never committed. Only the blank template is shared.
 
 The next run fills the sheet, including everything found before you set it up.
 
+**Tracking columns.** Besides the bot's columns, a new sheet gets **Email sent**
+and **LinkedIn message**, and every new row starts with `Not sent` in both. Update
+them by hand as you reach out; the bot never changes them after that.
+
+**Your own columns are safe.** Add any columns you like (notes, interview date...)
+anywhere in the sheet, and reorder or move the bot's columns if you want. The bot:
+
+- matches its columns by header name, not position, and leaves yours empty on
+  new rows;
+- never changes existing rows, your formatting or the header row;
+- inserts new rows below the last one, so nothing further down is overwritten;
+- writes to the tab whose header row has `Company` and `Website`, so you can add
+  other tabs.
+
+Don't rename the bot's own column headers: a renamed column is skipped (its
+values stay in the CSV) and the run prints a warning.
+
 ---
 
 ## Everyday use
@@ -277,8 +294,12 @@ The bot is built to behave like a polite visitor, so sites have no reason to blo
 - **Obeys `robots.txt`**, including `Crawl-delay`. If a site's `robots.txt` can't
   be read because of a server error, the site is skipped (as the robots.txt
   standard, RFC 9309, says).
-- **Goes slowly**: at least `request_delay_seconds` between requests and 3 seconds
-  between searches. It reads at most 4 pages per company website.
+- **Goes slowly**: it waits at least 3 seconds between any two requests
+  (`request_delay_seconds`), 5 seconds between pages of the same website
+  (`site_delay_seconds`), and 3 seconds between searches. It reads at most 4
+  pages per company website. It doesn't use a browser or click anything: it
+  downloads each page once and reads the text, which is the lightest kind of
+  visit a site can get.
 - **Backs off**: if a site answers "too many requests" (429) or "unavailable"
   (503), it's skipped for the rest of the run. If the search engine rate-limits,
   searching stops for that run instead of retrying.
